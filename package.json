@@ -5,7 +5,7 @@
   "main": "index.js",
   "scripts": {
     "build": "cross-env TS_NODE_PROJECT=\"tsconfig-for-webpack-config.json\" webpack",
-    "start": "webpack-dev-server --config src/sample/webpack.config.ts",
+    "start": "webpack-dev-server --config src/sample/webpack.config.ts --watch",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [
@@ -29,5 +29,9 @@
     "webpack": "^4.29.0",
     "webpack-cli": "^3.2.1",
     "webpack-dev-server": "^3.1.14"
+  },
+  "dependencies": {
+    "@types/d3": "^5.7.0",
+    "d3": "^5.7.0"
   }
 }
