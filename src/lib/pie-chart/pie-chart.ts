@@ -2,6 +2,8 @@ import { select, Selection } from 'd3-selection';
 import { pie, arc, PieArcDatum } from 'd3-shape';
 import { scaleOrdinal } from 'd3-scale';
 import { schemeCategory10 } from 'd3-scale-chromatic';
+import { interpolate } from 'd3-interpolate';
+import 'd3-transition';
 
 interface ChartOption {
 
@@ -12,8 +14,12 @@ interface ChartDataItem {
   value: number;
 }
 
+const d3Color = scaleOrdinal(schemeCategory10);
+const duration = 2000;
+
 export class PieChart {
   private svg: Selection<SVGSVGElement, {}, null, undefined>;
+  private previousStateMap = new Map<string, PieArcDatum<ChartDataItem>>();
 
   constructor(container: HTMLElement, data: ChartDataItem[], private options?: ChartOption) {
     this.svg = select(container).append('svg');
@@ -37,33 +43,54 @@ export class PieChart {
     const height = +svgNode.getBoundingClientRect().height;
     const radius = Math.min(width, height) / 2;
 
-    console.log(width, height, radius);
-
-    var d3Arc = arc<any, PieArcDatum<number | { valueOf(): number }>>()
+    var d3Arc = arc<any, PieArcDatum<ChartDataItem>>()
       .innerRadius(radius - 100)
       .outerRadius(radius - 50);
 
     const pieContainer = this.svg.select('g.pie-container')
       .attr('transform', 'translate(' + width / 2 + ',' + height / 2 + ')');
 
-    const pieData = pie()(data.map(item => item.value));
-    const d3Color = scaleOrdinal(schemeCategory10);
+    const pieData = pie<ChartDataItem>().sort(null).value(d => d.value)(data);
 
-    var path = pieContainer.selectAll('path')
-      .data(pieData)
+    console.log('pieData', pieData);
+
+    // update elements
+    const pieces = pieContainer.selectAll('path')
+      .data(pieData, (d, i) => data[i] ? data[i].label : '');
+      // .data(pieData);
+
+    // exit elements
+    pieces.exit().remove();
+
+    // enter elements, startAngle, endAngle: 2Pi
+    const piecesEnter = pieces
       .enter().append('path')
-      .attr('fill', function (d, i) { return d3Color(`${i}`); })
-      .attr('d', (d) => d3Arc(d))
-      
-      // .duration(function (d, i) {
-      //   return i * 800;
-      // })
-      // .attrTween('d', function (d) {
-      //   var i = d3.interpolate(d.startAngle + 0.1, d.endAngle);
-      //   return function (t) {
-      //     d.endAngle = i(t);
-      //     return arc(d);
-      //   }
-      // });
+
+    piecesEnter.merge(pieces as any)
+      .attr('fill', (d) => d3Color(d.data.label))
+      .attr('id', (d) => d.data.label)
+      .transition()
+      .duration(duration)
+      .attrTween('d', (d) => {
+        console.log('interpolate', d);
+        const prevState = this.previousStateMap.get(d.data.label);
+        const prevStartAngle = prevState ? prevState.startAngle : 0;
+        const prevEndAngle = prevState ? prevState.endAngle : 0;
+        const start = interpolate(prevStartAngle, d.startAngle);
+        const end = interpolate(prevEndAngle, d.endAngle);
+
+        return (t: number) => {
+          d.startAngle = start(t);
+          d.endAngle = end(t);
+
+          return d3Arc(d)!;
+        }
+      });
+
+    // update previous states
+    setTimeout(() => {
+      this.previousStateMap = new Map<string, PieArcDatum<ChartDataItem>>();
+      pieData.forEach((d) => this.previousStateMap.set(d.data.label, {... d}));
+    }, duration);
   }
 }
