@@ -4,7 +4,7 @@
   "description": "d3 typescript chart library",
   "main": "index.js",
   "scripts": {
-    "build": "cross-env TS_NODE_PROJECT=\"tsconfig-for-webpack-config.json\" webpack",
+    "build": "webpack --config src/sample/webpack-prod.config.ts",
     "start": "webpack-dev-server --config src/sample/webpack.config.ts --watch",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
