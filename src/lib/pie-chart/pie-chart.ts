@@ -20,6 +20,7 @@ const duration = 2000;
 export class PieChart {
   private svg: Selection<SVGSVGElement, {}, null, undefined>;
   private previousStateMap = new Map<string, PieArcDatum<ChartDataItem>>();
+  private prevData: ChartDataItem[] = [];
 
   constructor(container: HTMLElement, data: ChartDataItem[], private options?: ChartOption) {
     this.svg = select(container).append('svg');
@@ -52,15 +53,45 @@ export class PieChart {
 
     const pieData = pie<ChartDataItem>().sort(null).value(d => d.value)(data);
 
-    console.log('pieData', pieData);
+    // calculate current state map
+    const currentStateMap = new Map<string, PieArcDatum<ChartDataItem>>();
+    pieData.forEach((d) => currentStateMap.set(d.data.label, { ...d }));
 
     // update elements
     const pieces = pieContainer.selectAll('path')
-      .data(pieData, (d, i) => data[i] ? data[i].label : '');
-      // .data(pieData);
+      .data(pieData, (d) => d ? (d as PieArcDatum<ChartDataItem>).data.label : '');
+
+    const previousStateMap = this.previousStateMap;
+    const prevData = this.prevData;
 
     // exit elements
-    pieces.exit().remove();
+    pieces.exit()
+      .transition()
+      .duration(duration)
+      .attrTween('d', function () {
+        const label = select(this).attr('id');
+        const index = prevData.findIndex(item => item.label === label);
+        const closestIndex = findClosestHasStateIndex(currentStateMap, prevData, index);
+
+        let endAnimationAngle = 0;
+        if (closestIndex >= 0) {
+          const closestCurrentState = currentStateMap.get(prevData[closestIndex].label)!;
+          endAnimationAngle = closestCurrentState.endAngle;
+        }
+
+        const prevState = previousStateMap.get(label)!;
+
+        const start = interpolate(prevState.startAngle, endAnimationAngle);
+        const end = interpolate(prevState.endAngle, endAnimationAngle);
+
+        return (t: number) => {
+          const startAngle = start(t);
+          const endAngle = end(t);
+
+          return d3Arc({ startAngle, endAngle } as any)!;
+        }
+      })
+      .remove();
 
     // enter elements, startAngle, endAngle: 2Pi
     const piecesEnter = pieces
@@ -71,13 +102,11 @@ export class PieChart {
       .attr('id', (d) => d.data.label)
       .transition()
       .duration(duration)
-      .attrTween('d', (d) => {
-        console.log('interpolate', d);
-        const prevState = this.previousStateMap.get(d.data.label);
-        const prevStartAngle = prevState ? prevState.startAngle : 0;
-        const prevEndAngle = prevState ? prevState.endAngle : 0;
-        const start = interpolate(prevStartAngle, d.startAngle);
-        const end = interpolate(prevEndAngle, d.endAngle);
+      .attrTween('d', (d, i) => {
+        const hasStateIndex = findClosestHasStateIndex(previousStateMap, data, i);
+        const startAngles = determineAnimationStartingAngle(previousStateMap, data, hasStateIndex, i);
+        const start = interpolate(startAngles[0], d.startAngle);
+        const end = interpolate(startAngles[1], d.endAngle);
 
         return (t: number) => {
           d.startAngle = start(t);
@@ -88,9 +117,48 @@ export class PieChart {
       });
 
     // update previous states
-    setTimeout(() => {
-      this.previousStateMap = new Map<string, PieArcDatum<ChartDataItem>>();
-      pieData.forEach((d) => this.previousStateMap.set(d.data.label, {... d}));
-    }, duration);
+    this.previousStateMap = currentStateMap;
+    this.prevData = [...data];
   }
+}
+
+/**
+ * Find closest position to this index that its prevState exist
+ * 
+ * @param previousStateMap 
+ * @param currentData 
+ * @param index 
+ */
+function findClosestHasStateIndex(previousStateMap: Map<string, PieArcDatum<ChartDataItem>>, currentData: ChartDataItem[], index: number): number {
+  if (index >= currentData.length) {
+    throw new Error('index is outside of currentData range');
+  }
+
+  let closestIndex = index;
+  while (closestIndex >= 0 && !previousStateMap.has(currentData[closestIndex].label)) { closestIndex--; }
+
+  return closestIndex;
+}
+
+/**
+ * 
+ * @param previousStateMap 
+ * @param closestIndex 
+ * @param index 
+ */
+function determineAnimationStartingAngle(previousStateMap: Map<string, PieArcDatum<ChartDataItem>>, currentData: ChartDataItem[], closestIndex: number, index: number): [number, number] {
+  if (closestIndex === -1) {
+    return [0, 0];
+  }
+
+  const closestPrevState = previousStateMap.get(currentData[closestIndex].label);
+  if (!closestPrevState) {
+    throw new Error('closestIndex is inappropriate');
+  }
+
+  if (closestIndex === index) {
+    return [closestPrevState.startAngle, closestPrevState.endAngle];
+  }
+
+  return [closestPrevState.endAngle, closestPrevState.endAngle]
 }
